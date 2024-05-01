@@ -5,6 +5,7 @@ import hello.jdbc.domain.Member;
 import lombok.extern.slf4j.Slf4j;
 
 import java.sql.*;
+import java.util.NoSuchElementException;
 
 /**
  * JDBC - DriverManager 사용
@@ -38,6 +39,39 @@ public class MemberRepositoryV0 {
             throw e;
         } finally { // Connection Close 처리를 해주지 않으면 Connection이 끊어지지 않고 계속 유지되는 문제 발생. (리소스 누수)
             close(con, pstmt, null);
+        }
+    }
+
+    public Member findById(String memberId) throws SQLException {
+        String sql = "SELECT * FROM MEMBER WHERE MEMBER_ID = ?";
+
+        Connection con = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, memberId);
+
+            // executeQuery()는 DB 조회 결과인 ResultSet을 반환해줌.
+            rs = pstmt.executeQuery();
+
+            // ResultSet의 cursor은 최초에 데이터를 가리키지 않기 때문에, next를 통해 cursor를 이동시켜주어야 한다.
+            if(rs.next()) {
+                Member member = new Member();
+                member.setMemberId(rs.getString("member_id"));
+                member.setMoney(rs.getInt("money"));
+                return member;
+            } else {
+                throw new NoSuchElementException("member not found memberId=" + memberId);
+            }
+
+        } catch(SQLException e) {
+            log.error("db error", e);
+            throw e;
+        } finally {
+            close(con, pstmt, rs);
         }
     }
 
