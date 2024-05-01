@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,5 +32,16 @@ class MemberRepositoryV0Test {
 
         // 조회해온 Member가 처음 생성한 Member와 같은 Member인지 비교.
         org.assertj.core.api.Assertions.assertThat(findMember).isEqualTo(member);
+
+        // update: money 10000 -> 20000
+        repositoryV0.update(member.getMemberId(), 20000);
+        Member updateMember = repositoryV0.findById(member.getMemberId());
+        org.assertj.core.api.Assertions.assertThat(updateMember.getMoney()).isEqualTo(20000);
+
+        // delete
+        repositoryV0.delete(member.getMemberId());
+
+        // 조회 Method를 실행하면 NoSuchElementException이 발생하는지 확인. (이미 DELETE 문이 실행되었으므로)
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> repositoryV0.findById(member.getMemberId())).isInstanceOf(NoSuchElementException.class);
     }
 }
