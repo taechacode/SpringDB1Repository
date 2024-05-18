@@ -136,3 +136,31 @@ ResultSet rst = stmt.executeQuery(sqlstr);
 - Statement를 사용하면 매번 쿼리를 수행할 때마다 계속적으로 단계를 거치면서 수행하지만 Prepared Statement는 처음 한 번만 1~3 단계를 거친 후 캐시에 담아 재사용을 한다.
 - 만약 동일한 쿼리를 반복적으로 수행한다면 Prepared Statement가 DB에 훨씬 적은 부하를 주며, 성능도 좋다.
 <br/><br/>
+
+## executeUpdate(), executeQuery(), ResultSet
+
+### executeUpdate()
+```
+int executeUpdate() throws SQLException;
+```
+- `executeUpdate()`은 `int`를 반환하는데 영향받은 DB row 수를 반환한다. 만약 하나의 row를 INSERT하면 1을 반환한다.
+<br/><br/>
+
+### executeQuery()
+```
+ResultSet executeQuery() throws SQLException;
+```
+- 데이터를 조회할 때는 `executeQuery()`를 사용한다. `executeQuery()`는 결과를 `ResultSet`에 담아서 반환한다.
+<br/><br/>
+
+### ResultSet
+- `ResultSet`은 다음과 같이 생긴 데이터 구조다. 보통 SELECT 쿼리의 결과가 순서대로 들어간다.
+  - 예를 들어서 `SELECT MEMBER_ID, MONEY`라고 지정하면 `MEMBER_ID`, `MONEY`라는 이름으로 데이터가 저장된다.
+  - 참고로 `SELECT *`를 사용하면 테이블의 모든 컬럼을 다 지정한다. 
+- `ResultSet` 내부에 있는 커서(`cursor`)를 이동해서 다음 데이터를 조회할 수 있다.
+- `rs.next()`: 이것을 호출하면 커서가 다음으로 이동한다. 참고로 최초의 커서는 데이터를 가리키고 있지 않기 때문에 `rs.next()`를 최초 한번은 호출해야 데이터를 조회할 수 있다.
+  - `rs.next()`의 결과가 `true`면 커서의 이동 결과 데이터가 있다는 뜻이다.
+  - `rs.next()`의 결과가 `false`면 더이상 커서가 가리키는 데이터가 없다는 뜻이다.
+- `rs.getString("MEMBER_ID")`: 현재 커서가 가리키고 있는 위치의 `MEMBER_ID` 데이터를 `String` 타입으로 반환한다.
+- `rs.getInt("MONEY")`: 현재 커서가 가리키고 있는 위치의 `MONEY` 데이터를 `int` 타입으로 반환한다.
+<br/><br/>
