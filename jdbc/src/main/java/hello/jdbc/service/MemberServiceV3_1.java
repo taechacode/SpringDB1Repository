@@ -55,6 +55,7 @@ public class MemberServiceV3_1 {
         memberRepository.update(toId, toMember.getMoney() + money);
     }
 
+    /*
     private void release(Connection con) {
         if(con != null) {
             try {
@@ -67,6 +68,7 @@ public class MemberServiceV3_1 {
             }
         }
     }
+    */
 
     private void validation(Member toMember) {
         if(toMember.getMemberId().equals("ex")) {
