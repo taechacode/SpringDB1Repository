@@ -105,11 +105,13 @@ public class MemberServiceV2 {
 - 핵심 비즈니스 로직과 JDBC 기술이 섞여 있어서 유지보수 하기 어렵다.
 <br/>
 
+
 ### 문제 정리
 - 트랜잭션 문제
 - 예외 누수 문제
 - JDBC 반복 문제
 <br/>
+
 
 #### 트랜잭션 문제
 - JDBC 구현 기술이 서비스 계층에 누수되는 문제
@@ -123,12 +125,79 @@ public class MemberServiceV2 {
   - `try`, `catch`, `finally` ...트랜잭션 적용 코드의 반복이 많다.
 <br/>
 
+
 #### 예외 누수
 - 데이터 접근 계층의 JDBC 구현 기술 예외가 서비스 계층으로 전파된다.
 - `SQLException`은 체크 예외이기 때문에 데이터 접근 계층을 호출한 서비스 계층에서 해당 예외를 잡아서 처리하거나 명시적으로 `throws`를 통해서 다시 밖으로 던져야한다.
 - `SQLException`은 JDBC 전용 기술이다. 향후 JPA나 다른 데이터 접근 기술을 사용하면, 그에 맞는 다른 예외로 변경해야 하고, 결국 서비스 코드도 수정해야 한다.
 <br/>
 
+
 #### JDBC 반복 문제
 - `try`, `catch`, `finally` ...유사한 코드의 반복이 너무 많다. 커넥션을 열고, `PreparedStatement`를 사용하고, 결과를 Mapping하고, 실행하고, 커넥션과 리소스를 정리한다.
 <br/>
+
+
+## 트랜잭션 추상화
+- 현재 서비스 계층은 트랜잭션을 사용하기 위해서 JDBC 기술에 의존하고 있다. 향후 JDBC에서 JPA 같은 다른 데이터 접근 기술로 변경하면, 서비스 계층의 트랜잭션 관련 코드도 모두 함께 수정해야 한다.  
+<br/>
+
+
+#### 구현 기술에 따른 트랜잭션 사용법
+- 트랜잭션은 원자적 단위의 비즈니스 로직을 처리하기 위해 사용한다.
+- 구현 기술마다 트랜잭션을 사용하는 방법이 다르다.
+  - JDBC : `con.setAutoCommit(false)`
+  - JPA : `transaction.begin()`
+<br/>
+
+
+#### JDBC 트랜잭션 의존
+![JDBC 트랜잭션 의존](https://github.com/user-attachments/assets/cb6364cd-900b-4d34-8ee9-92f2d5c6b004)
+- JDBC 기술을 사용하다가 JPA 기술로 변경하게 되면 서비스 계층의 코드도 JPA 기술을 사용하도록 함께 수정해야 한다.
+<br/>
+
+
+#### 트랜잭션 추상화
+- JDBC 트랜잭션 의존 문제를 해결하려면 트랜잭션 기능을 추상화하면 된다. 다음과 같은 인터페이스를 만들어서 사용하면 된다.
+```
+public interface TxManager {
+  begin();
+  commit();
+  rollback();
+}
+```
+- 그리고 다음과 같이 TxManager 인터페이스를 기반으로 각각의 기술에 맞는 구현체를 만들면 된다.
+  - JdbcTxManager : JDBC 트랜잭션 기능을 제공하는 구현체
+  - JpaTxManager : JPA 트랜잭션 기능을 제공하는 구현체
+<br/>
+
+
+#### 트랜잭션 추상화와 의존관계
+![트랜잭션 추상화와 의존관계](https://github.com/user-attachments/assets/d7e3da3d-b309-4630-aacf-79dec2c8fb69)
+- 서비스는 특정 트랜잭션 기술에 직접 의존하는 것이 아니라, `TxManager`라는 추상화된 인터페이스에 의존한다. 이제 원하는 구현체를 DI를 통해서 주입하면 된다. 예를 들어서 JDBC 트랜잭션 기능이 필요하면 `JdbcTxManager`를 서비스에 주입하고, JPA 트랜잭션 기능으로 변경해야 하면 `JpaTxManager`를 주입하면 된다.
+- 클라이언트인 서비스는 인터페이스에 의존하고 DI를 사용한 덕분에 OCP 원칙을 지키게 되었다. 이제 트랜잭션을 사용하는 서비스 코드를 전혀 변경하지 않고, 트랜잭션 기술을 마음껏 변경할 수 있다.
+<br/>
+
+
+### 스프링의 트랜잭션 추상화
+![스프링의 트랜잭션 추상화](https://github.com/user-attachments/assets/7a5ebe8e-d27a-4180-9fd0-429d5bdf5c4a)
+- 스프링 트랜잭션 추상화의 핵심은 `PlatformTransactionManager` 인터페이스이다.
+  - `org.springframework.transaction.PlatformTransactionManager`
+<br/>
+
+
+#### PlatformTransactionManager 인터페이스
+```
+package org.springframework.transaction;
+
+public interface PlatformTransactionManager extends TransactionManager {
+  TransactionStatus getTransaction(@Nullable TransactionDefinition definition) throws TransactionException;
+  void commit(TransactionStatus status) throws TransactionException;
+  void rollback(TransactionStatus status) throws TransactionException;
+}
+```
+- `getTransaction()`: 트랜잭션을 시작한다.
+  - 이름이 `getTransaction()`인 이유는 기존에 이미 진행중인 트랜잭션이 있는 경우 해당 트랜잭션에 참여할 수 있기 때문이다.
+- `commit()`: 트랜잭션을 커밋한다.
+- `rollback()`: 트랜잭션을 롤백한다.
+<br/> 
