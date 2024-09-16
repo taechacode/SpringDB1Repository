@@ -246,3 +246,78 @@ public interface PlatformTransactionManager extends TransactionManager {
 
 > **참고** <br/>
 > 쓰레드 로컬을 사용하면 각각의 쓰레드마다 별도의 저장소가 부여된다. 따라서 해당 쓰레드만 해당 데이터에 접근할 수 있다.  
+<br/>
+
+
+## 트랜잭션 문제 해결 - 트랜잭션 매니저1
+
+#### DataSourceUtils.getConnection()
+```
+private Connection getConnection() throws SQLException {
+  // 주의! 트랜잭션 동기화를 사용하려면 DataSourceUtils를 사용해야 한다.
+  Connection con = DataSourceUtils.getConnection(dataSource);
+  log.info("get connection={} class={}", con, con.getClass());
+  return con;
+}
+```
+- `getConnection()`에서 `DataSourceUtils.getConnection()`를 사용하도록 변경된 부분을 특히 주의해야 한다.
+- `DataSourceUtils.getConnection()`는 다음과 같이 동작한다.
+  - **트랜잭션 동기화 매니저가 관리하는 커넥션이 있으면 해당 커넥션을 반환한다.**
+  - 트랜잭션 동기화 매니저가 관리하는 커넥션이 없는 경우 새로운 커넥션을 생성해서 반환한다.
+<br/>
+
+
+#### DataSourceUtils.releaseConnection()
+```
+private void close(Connection con, Statement stmt, ResultSet rs) {
+  JdbcUtils.closeResultSet(rs);
+  JdbcUtils.closeStatement(stmt);
+  // 주의! 트랜잭션 동기화를 사용하려면 DataSourceUtils를 사용해야 한다.
+  DataSourceUtils.releaseConnection(con, dataSource);
+}
+```
+- `close()`에서 `DataSourceUtils.releaaseConnection()`를 사용하도록 변경된 부분을 특히 주의해야 한다. 커넥션을 `con.close()`를 사용해서 직접 닫아버리면 커넥션이 유지되지 않는 문제가 발생한다. 이 커넥션은 이후 로직은 물론이고, 트랜잭션을 종료(커밋, 롤백)할 때까지 살아있어야 한다.
+- `DataSourceUtils.releaseConnection()`을 사용하면 커넥션을 바로 닫는 것이 아니다.
+  - **트랜잭션을 사용하기 위해 동기화된 커넥션은 커넥션을 닫지 않고 그대로 유지해준다.**
+  - 트랜잭션 동기화 매니저가 관리하는 커넥션이 없는 경우 해당 커넥션을 닫는다.
+<br/>
+
+
+#### 트랜잭션 매니저를 사용하는 서비스 코드
+
+```
+private final PlatformTransactionManager transactionManager;
+```
+- 트랜잭션 매니저를 주입받는다. 지금은 JDBC 기술을 사용하기 때문에 `DataSourceTransactionManager` 구현체를 주입 받아야한다.
+- JPA 같은 기술로 변경되면 `JpaTransactionManager`를 주입 받으면 된다.
+
+```
+// 트랜잭션 시작
+TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+```
+- `transactionManager.getTransaction()`
+  - 트랜잭션을 시작한다.
+  - `TransactionStatus status`를 반환한다. 현재 트랜잭션의 상태 정보가 포함되어 있다. 이후 트랜잭션을 커밋, 롤백할 때 필요하다.
+- `new DefaultTransactionDefinition()`
+  - 트랜잭션과 관련된 옵션을 지정할 수 있다.
+- `transactionManager.commit(status)`
+  - 트랜잭션이 성공하면 이 로직을 호출해서 커밋하면 된다.
+- `transactionManager.rollback(status)`
+  - 문제가 발생하면 이 로직을 호출해서 트랜잭션을 롤백하면 된다.
+<br/>
+
+
+#### 초기화 코드 설명
+
+```
+@BeforeEach
+void before() {
+  DriverManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+  PlatformTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
+  memberRepository = new MemberRepositoryV3(dataSource);
+  memberService = new MemberServiceV3_1(transactionManager, memberRepository);
+}
+```
+- `new DataSourceTransactionManager(dataSource)`
+  - JDBC 기술을 사용하므로, JDBC용 트랜잭션 매니저(`DataSourceTransactionManager`)를 선택해서 서비스에 주입한다.
+  - 트랜잭션 매니저는 데이터소스를 통해 커넥션을 생성하므로 `DataSource`가 필요하다.   
