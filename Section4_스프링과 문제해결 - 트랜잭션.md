@@ -368,3 +368,77 @@ void before() {
 > 여기서는 `DataSourceTransactionManager`의 동작 방식을 위주로 설명했다.<br/>
 > 다른 트랜잭션 매니저는 해당 기술에 맞도록 변형되어서 동작한다.    
 <br/>
+
+
+## 트랜잭션 문제해결 - 트랜잭션 템플릿
+
+#### 트랜잭션 사용 코드
+```
+// 트랜잭션 시작
+TransactionStatus status = transactionManager.getTransaction(new
+DefaultTransactionDefinition());
+try {
+   // 비즈니스 로직
+   bizLogic(fromId, toId, money);
+   transactionManager.commit(status); // 성공 시 커밋
+} catch (Exception e) {
+   transactionManager.rollback(status); // 실패 시 롤백
+   throw new IllegalStateException(e);
+}
+```
+- 트랜잭션을 사용하는 로직을 살펴보면 위와 같은 패턴이 반복되는 것을 확인할 수 있다.
+- 다른 서비스에서 트랜잭션을 시작하려면 `try`, `catch`, finally`를 포함한 성공 시 커밋, 실패 시 롤백 코드가 반복될 것이다. 이런 형태는 각각의 서비스에서 반복된다. 달라지는 부분은 비즈니스 로직 뿐이다.
+- 이럴 때 템플릿 콜백 패턴을 활용하면 반복 문제를 깔끔하게 해결할 수 있다.
+<br/>
+
+#### 트랜잭션 템플릿
+- 템플릿 콜백 패턴을 적용하려면 템플릿을 제공하는 클래스를 작성해야하는데, 스프링은 `TransactionTemplate`라는 템플릿 클래스를 제공한다.
+<br/>
+
+```
+public class TransactionTemplate {
+   private PlatformTransactionManager transactionManager;
+   public <T> T execute(TransactionCallback<T> action){..}
+   void executeWithoutResult(Consumer<TransactionStatus> action){..}
+}
+```
+- `execute()` : 응답 값이 있을 때 사용한다.
+- `executeWithoutResult()` : 응답 값이 없을 때 사용한다.
+<br/>
+
+
+```
+private final TransactionTemplate txTemplate;
+private final MemberRepositoryV3 memberRepository;
+
+public MemberServiceV3_2(PlatformTransactionManager transactionManager, MemberRepositoryV3 memberRepository) {
+   this.txTemplate = new TransactionTemplate(transactionManager);
+   this.memberRepository = memberRepository;
+}
+```
+- `TransactionTemplate`을 사용하려면 `transactionManager`가 필요하다. 생성자에서 `transactionManager`를 주입 받으면서 `TransactionTemplate`을 생성했다.
+<br/>
+
+
+#### 트랜잭션 템플릿 사용 로직
+```
+txTemplate.executeWithoutResult((status) -> {
+   try {
+     //비즈니스 로직
+     bizLogic(fromId, toId, money);
+   } catch (SQLException e) {
+     throw new IllegalStateException(e);
+   }
+});
+```
+- 트랜잭션 템플릿 덕분에 트랜잭션을 시작하고, 커밋하거나 롤백하는 코드가 모두 제거되었다.
+- 트랜잭션 템플릿은 비즈니스 로직이 정상 수행되면 커밋한다. 언체크 예외가 발생하면 롤백한다. 그 외의 경우 커밋한다. 체크 예외의 경우에는 커밋한다.
+- 코드에서 예외를 처리하기 위해 `try~catch`가 들어갔는데, `bizLogic()` 메서드를 호출하면 `SQLException` 체크 예외를 넘겨준다. 해당 람다에서 체크 예외를 밖으로 던질수 없기 때문에 언체크 예외로 바꾸어 던지도록 예외를 전환했다.
+<br/>
+
+
+#### 정리
+- 트랜잭션 템플릿 덕분에, 트랜잭션을 사용할 때 반복하는 코드를 제거할 수 있었다. 하지만 이곳은 서비스 로직인데 비즈니스 로직뿐만 아니라 트랜잭션을 처리하는 기술 로직이 함께 포함되어 있다.
+- 애플리케이션을 구성하는 로직을 핵심 기능과 부가 기능으로 구분하자면 서비스 입장에서 비즈니스 로직은 핵심 기능이고, 트랜잭션은 부가 기능이다.
+- 이렇게 비즈니스 로직과 트랜잭션을 처리하는 기술 로직이 한 곳에 있으면 두 관심사를 하나의 클래스에서 처리하게 된다. 결과적으로 코드를 유지보수하기 어려워진다.
+- 서비스 로직은 가급적 핵심 비즈니스 로직만 있어야 한다. 하지만 트랜잭션 기술을 사용하려면 어쩔 수 없이 트랜잭션 코드가 나와야 한다. 이 문제를 해결하는 방법은? -> `트랜잭션 AOP`            
